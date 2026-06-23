@@ -29,8 +29,8 @@
 ## Getting Started
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/worthit.git
-cd worthit
+git clone https://github.com/jchristadore-ux/WorthIt.git
+cd WorthIt
 npm install
 npm start
 ```
@@ -39,34 +39,42 @@ The app calls `https://api.anthropic.com/v1/messages` directly from the browser 
 
 ---
 
-## Deployment
+## Deployment — GitHub Pages (live)
 
-### Vercel (recommended)
+This repo deploys automatically. A GitHub Actions workflow builds the React app
+on GitHub's servers and publishes the compiled output to GitHub Pages — you do
+**not** need to run anything locally.
 
-```bash
-npm install -g vercel
-vercel --prod
-```
+**Live URL:** https://jchristadore-ux.github.io/WorthIt/
 
-Set env var `REACT_APP_ANTHROPIC_KEY` in Vercel dashboard → the fetch call will need updating to pass it as a header (see note below).
+### One-time setup
 
-### GitHub Pages
+1. Get these files onto the `main` branch (merging the PR does this).
+2. In the repo, go to **Settings → Pages**.
+3. Under **Build and deployment → Source**, select **GitHub Actions**
+   (not "Deploy from a branch"). This is the step that stops Pages from
+   showing the README.
+4. Done. Every push to `main` rebuilds and redeploys automatically. Watch
+   progress under the **Actions** tab.
 
-```bash
-npm run build
-# push /build to gh-pages branch or use gh-pages package
-```
+> Why this is needed: the app is React/JSX source that browsers can't run
+> directly. It must be compiled (`npm run build`) into static files first.
+> Serving the repo root without that build is why GitHub Pages was falling
+> back to rendering `README.md`.
 
 ---
 
 ## API Key Note
 
-The screenshot analysis calls the Anthropic API. In production, **never expose your API key client-side**. Route the request through a serverless function:
+The screenshot auto-fill feature calls the Anthropic API directly from the
+browser. The app reads an optional key you enter in the UI (tap **"Add
+Anthropic API key"** on the Log tab) and stores it **only in your browser's
+localStorage** — it is never committed to the repo or sent anywhere except
+Anthropic.
 
-- Vercel: add `/api/analyze.js` that proxies the request server-side
-- Netlify: add `/netlify/functions/analyze.js`
-
-For personal/private use on your own phone, the current client-side call works fine.
+Manual entry works fully without a key. For a hardened production setup, route
+the request through a serverless proxy (e.g. Vercel `/api/analyze.js`) so the
+key never touches the client.
 
 ---
 
