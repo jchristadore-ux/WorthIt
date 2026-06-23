@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const HOURLY_RATE      = 75;
@@ -268,16 +268,36 @@ function ShiftCard({ shift, idx, onDelete }) {
   );
 }
 
+// ── Persistence ──────────────────────────────────────────────────────────────
+const STORAGE_KEY = "worthit_shifts";
+const KEY_STORAGE = "worthit_anthropic_key";
+
+const SEED_SHIFTS = [
+  {
+    platform: "UberEats", date: "2026-06-22",
+    timeOut: "11:00", timeHome: "13:01",
+    miles: "18", trips: "3",
+    netFare: "14.84", tip: "18.86", totalEarnings: "33.70",
+  },
+];
+
+const loadShifts = () => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore corrupt storage */ }
+  return SEED_SHIFTS;
+};
+
 // ── Main App ───────────────────────────────────────────────────────────────
 export default function App() {
-  const [shifts, setShifts] = useState([
-    {
-      platform: "UberEats", date: "2026-06-22",
-      timeOut: "11:00", timeHome: "13:01",
-      miles: "18", trips: "3",
-      netFare: "14.84", tip: "18.86", totalEarnings: "33.70",
-    },
-  ]);
+  const [shifts, setShifts] = useState(loadShifts);
+
+  // Persist shifts to the browser so the log survives reloads.
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(shifts)); }
+    catch { /* storage may be unavailable (private mode) */ }
+  }, [shifts]);
 
   const [form, setForm] = useState({
     platform: "UberEats",
@@ -287,12 +307,23 @@ export default function App() {
   });
 
   const [tab, setTab]             = useState("log");
-  const [result, setResult]       = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [preview, setPreview]     = useState(null);
   const [imgB64, setImgB64]       = useState(null);
   const [toast, setToast]         = useState(null);
+  const [apiKey, setApiKey]       = useState(() => {
+    try { return localStorage.getItem(KEY_STORAGE) || ""; } catch { return ""; }
+  });
+  const [showKey, setShowKey]     = useState(false);
   const fileRef = useRef();
+
+  // Persist the (optional) Anthropic API key locally — never committed to the repo.
+  useEffect(() => {
+    try {
+      if (apiKey) localStorage.setItem(KEY_STORAGE, apiKey);
+      else localStorage.removeItem(KEY_STORAGE);
+    } catch { /* ignore */ }
+  }, [apiKey]);
 
   const showToast = (msg) => {
     setToast(msg);
@@ -311,12 +342,22 @@ export default function App() {
 
   const analyzeScreenshot = async () => {
     if (!imgB64) return;
+    if (!apiKey) {
+      setShowKey(true);
+      showToast("Add your Anthropic API key to enable screenshot reading");
+      return;
+    }
     setAnalyzing(true);
-    setResult(null);
     try {
       const res  = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          // Required for direct browser-to-API calls (no backend proxy).
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
           max_tokens: 1000,
@@ -334,7 +375,6 @@ Use null for any field not visible.` },
       const data   = await res.json();
       const text   = data.content?.find((b) => b.type === "text")?.text || "{}";
       const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
-      setResult(parsed);
       setForm((f) => ({
         ...f,
         platform:      parsed.platform                          || f.platform,
@@ -345,7 +385,6 @@ Use null for any field not visible.` },
       }));
       showToast("Screenshot read — fields filled in below");
     } catch {
-      setResult({ error: true });
       showToast("Couldn't read screenshot — fill in manually");
     }
     setAnalyzing(false);
@@ -355,7 +394,7 @@ Use null for any field not visible.` },
     if (!form.totalEarnings || !form.timeOut || !form.timeHome) return;
     setShifts((s) => [{ ...form }, ...s]);
     setForm((f) => ({ ...f, miles: "", trips: "", netFare: "", tip: "", totalEarnings: "" }));
-    setPreview(null); setImgB64(null); setResult(null);
+    setPreview(null); setImgB64(null);
     setTab("history");
     showToast("Shift saved");
   };
@@ -525,6 +564,32 @@ Use null for any field not visible.` },
                 {analyzing ? "Reading screenshot…" : "Auto-Fill from Screenshot"}
               </button>
             )}
+
+            {/* Optional API key for screenshot reading */}
+            <div style={{ textAlign: "center" }}>
+              <button
+                onClick={() => setShowKey((s) => !s)}
+                style={{ background: "none", color: "var(--text-3)", fontSize: 11, letterSpacing: "0.04em" }}
+              >
+                {apiKey ? "🔑 AI key set — tap to edit" : "🔑 Add Anthropic API key (optional)"}
+              </button>
+              {showKey && (
+                <input
+                  type="password"
+                  placeholder="sk-ant-…"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value.trim())}
+                  autoComplete="off"
+                  style={{ marginTop: 8, fontSize: 13 }}
+                />
+              )}
+              {showKey && (
+                <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 6, lineHeight: 1.5 }}>
+                  Stored only in this browser. Used to read screenshots via Claude.
+                  Manual entry below works without a key.
+                </div>
+              )}
+            </div>
 
             {/* Divider */}
             <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "2px 0" }}>
