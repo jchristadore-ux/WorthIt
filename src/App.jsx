@@ -527,7 +527,7 @@ Use null for any field not visible.` },
                 transition: "all 0.2s",
               }}
             >
-              <input ref={fileRef} type="file" accept="image/*" capture="environment"
+              <input ref={fileRef} type="file" accept="image/*"
                 style={{ display: "none" }}
                 onChange={(e) => handleFile(e.target.files[0])} />
               {preview ? (
