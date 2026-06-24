@@ -310,6 +310,7 @@ export default function App() {
   const [analyzing, setAnalyzing] = useState(false);
   const [preview, setPreview]     = useState(null);
   const [imgB64, setImgB64]       = useState(null);
+  const [imgType, setImgType]     = useState("image/png");
   const [toast, setToast]         = useState(null);
   const [apiKey, setApiKey]       = useState(() => {
     try { return localStorage.getItem(KEY_STORAGE) || ""; } catch { return ""; }
@@ -334,8 +335,11 @@ export default function App() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (e) => {
-      setImgB64(e.target.result.split(",")[1]);
-      setPreview(e.target.result);
+      const dataUrl = e.target.result;
+      const match   = /^data:(.*?);base64,/.exec(dataUrl);
+      setImgType(match ? match[1] : (file.type || "image/png"));
+      setImgB64(dataUrl.split(",")[1]);
+      setPreview(dataUrl);
     };
     reader.readAsDataURL(file);
   }, []);
@@ -345,6 +349,11 @@ export default function App() {
     if (!apiKey) {
       setShowKey(true);
       showToast("Add your Anthropic API key to enable screenshot reading");
+      return;
+    }
+    const SUPPORTED = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+    if (!SUPPORTED.includes(imgType)) {
+      showToast(`Can't read ${imgType || "that file"} — use a PNG or JPG screenshot`);
       return;
     }
     setAnalyzing(true);
@@ -364,7 +373,7 @@ export default function App() {
           messages: [{
             role: "user",
             content: [
-              { type: "image", source: { type: "base64", media_type: "image/jpeg", data: imgB64 } },
+              { type: "image", source: { type: "base64", media_type: imgType, data: imgB64 } },
               { type: "text", text: `Extract delivery earnings data from this screenshot. Return ONLY valid JSON, no markdown:
 {"platform":"UberEats"|"DoorDash"|"Both","trips":number|null,"netFare":number|null,"tip":number|null,"totalEarnings":number|null}
 Use null for any field not visible.` },
@@ -372,9 +381,35 @@ Use null for any field not visible.` },
           }],
         }),
       });
-      const data   = await res.json();
-      const text   = data.content?.find((b) => b.type === "text")?.text || "{}";
-      const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+      const data = await res.json();
+
+      // Surface real API errors instead of silently "succeeding".
+      if (!res.ok) {
+        const msg = data?.error?.message || `API error ${res.status}`;
+        console.error("Anthropic API error:", data);
+        showToast(
+          res.status === 401 ? "API key rejected — check your key"
+          : res.status === 400 ? `Bad request: ${msg.slice(0, 60)}`
+          : msg.slice(0, 80)
+        );
+        setAnalyzing(false);
+        return;
+      }
+
+      const text = data.content?.find((b) => b.type === "text")?.text || "";
+      let parsed;
+      try {
+        parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+      } catch {
+        console.error("Could not parse model output:", text);
+        showToast("Couldn't parse the screenshot — fill in manually");
+        setAnalyzing(false);
+        return;
+      }
+
+      const fields = ["platform", "trips", "netFare", "tip", "totalEarnings"];
+      const gotSomething = fields.some((k) => parsed[k] != null);
+
       setForm((f) => ({
         ...f,
         platform:      parsed.platform                          || f.platform,
@@ -383,9 +418,13 @@ Use null for any field not visible.` },
         tip:           parsed.tip       != null ? String(parsed.tip)           : f.tip,
         totalEarnings: parsed.totalEarnings != null ? String(parsed.totalEarnings) : f.totalEarnings,
       }));
-      showToast("Screenshot read — fields filled in below");
-    } catch {
-      showToast("Couldn't read screenshot — fill in manually");
+
+      showToast(gotSomething
+        ? "Screenshot read — fields filled in below"
+        : "Couldn't find earnings in that image — try a clearer shot");
+    } catch (err) {
+      console.error("Screenshot analysis failed:", err);
+      showToast("Network error reading screenshot — fill in manually");
     }
     setAnalyzing(false);
   };
