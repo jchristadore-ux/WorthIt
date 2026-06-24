@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useEffect } from "react";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 const HOURLY_RATE      = 75;
@@ -270,7 +270,6 @@ function ShiftCard({ shift, idx, onDelete }) {
 
 // ── Persistence ──────────────────────────────────────────────────────────────
 const STORAGE_KEY = "worthit_shifts";
-const KEY_STORAGE = "worthit_anthropic_key";
 
 const SEED_SHIFTS = [
   {
@@ -307,94 +306,17 @@ export default function App() {
   });
 
   const [tab, setTab]             = useState("log");
-  const [analyzing, setAnalyzing] = useState(false);
-  const [preview, setPreview]     = useState(null);
-  const [imgB64, setImgB64]       = useState(null);
   const [toast, setToast]         = useState(null);
-  const [apiKey, setApiKey]       = useState(() => {
-    try { return localStorage.getItem(KEY_STORAGE) || ""; } catch { return ""; }
-  });
-  const [showKey, setShowKey]     = useState(false);
-  const fileRef = useRef();
-
-  // Persist the (optional) Anthropic API key locally — never committed to the repo.
-  useEffect(() => {
-    try {
-      if (apiKey) localStorage.setItem(KEY_STORAGE, apiKey);
-      else localStorage.removeItem(KEY_STORAGE);
-    } catch { /* ignore */ }
-  }, [apiKey]);
 
   const showToast = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(null), 2800);
   };
 
-  const handleFile = useCallback((file) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setImgB64(e.target.result.split(",")[1]);
-      setPreview(e.target.result);
-    };
-    reader.readAsDataURL(file);
-  }, []);
-
-  const analyzeScreenshot = async () => {
-    if (!imgB64) return;
-    if (!apiKey) {
-      setShowKey(true);
-      showToast("Add your Anthropic API key to enable screenshot reading");
-      return;
-    }
-    setAnalyzing(true);
-    try {
-      const res  = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          // Required for direct browser-to-API calls (no backend proxy).
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1000,
-          messages: [{
-            role: "user",
-            content: [
-              { type: "image", source: { type: "base64", media_type: "image/jpeg", data: imgB64 } },
-              { type: "text", text: `Extract delivery earnings data from this screenshot. Return ONLY valid JSON, no markdown:
-{"platform":"UberEats"|"DoorDash"|"Both","trips":number|null,"netFare":number|null,"tip":number|null,"totalEarnings":number|null}
-Use null for any field not visible.` },
-            ],
-          }],
-        }),
-      });
-      const data   = await res.json();
-      const text   = data.content?.find((b) => b.type === "text")?.text || "{}";
-      const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
-      setForm((f) => ({
-        ...f,
-        platform:      parsed.platform                          || f.platform,
-        trips:         parsed.trips     != null ? String(parsed.trips)         : f.trips,
-        netFare:       parsed.netFare   != null ? String(parsed.netFare)       : f.netFare,
-        tip:           parsed.tip       != null ? String(parsed.tip)           : f.tip,
-        totalEarnings: parsed.totalEarnings != null ? String(parsed.totalEarnings) : f.totalEarnings,
-      }));
-      showToast("Screenshot read — fields filled in below");
-    } catch {
-      showToast("Couldn't read screenshot — fill in manually");
-    }
-    setAnalyzing(false);
-  };
-
   const saveShift = () => {
     if (!form.totalEarnings || !form.timeOut || !form.timeHome) return;
     setShifts((s) => [{ ...form }, ...s]);
     setForm((f) => ({ ...f, miles: "", trips: "", netFare: "", tip: "", totalEarnings: "" }));
-    setPreview(null); setImgB64(null);
     setTab("history");
     showToast("Shift saved");
   };
@@ -511,92 +433,6 @@ Use null for any field not visible.` },
         {/* ══ LOG TAB ══ */}
         {tab === "log" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-
-            {/* Screenshot upload */}
-            <div
-              onClick={() => fileRef.current?.click()}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }}
-              style={{
-                border: `1.5px dashed ${preview ? "var(--gold)" : "var(--border-2)"}`,
-                borderRadius: "var(--radius-md)",
-                padding: preview ? "14px" : "28px 20px",
-                textAlign: "center",
-                cursor: "pointer",
-                background: preview ? "var(--surface)" : "transparent",
-                transition: "all 0.2s",
-              }}
-            >
-              <input ref={fileRef} type="file" accept="image/*"
-                style={{ display: "none" }}
-                onChange={(e) => handleFile(e.target.files[0])} />
-              {preview ? (
-                <div>
-                  <img src={preview} alt="Earnings screenshot"
-                    style={{ maxHeight: 160, borderRadius: 8, marginBottom: 8, opacity: 0.9 }} />
-                  <div style={{ fontSize: 12, color: "var(--gold)" }}>Tap to change screenshot</div>
-                </div>
-              ) : (
-                <>
-                  <div style={{ fontSize: 32, marginBottom: 8 }}>📸</div>
-                  <div style={{ fontSize: 14, color: "var(--text-2)", marginBottom: 3 }}>
-                    Upload earnings screenshot
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--text-3)" }}>
-                    UberEats or DoorDash — AI reads it for you
-                  </div>
-                </>
-              )}
-            </div>
-
-            {preview && (
-              <button
-                onClick={analyzeScreenshot}
-                disabled={analyzing}
-                style={{
-                  background: analyzing ? "var(--surface-2)" : "var(--gold)",
-                  color: analyzing ? "var(--text-3)" : "#0A0A0A",
-                  borderRadius: "var(--radius-sm)", padding: "14px",
-                  fontWeight: 700, fontSize: 14,
-                  transition: "all 0.2s",
-                }}
-              >
-                {analyzing ? "Reading screenshot…" : "Auto-Fill from Screenshot"}
-              </button>
-            )}
-
-            {/* Optional API key for screenshot reading */}
-            <div style={{ textAlign: "center" }}>
-              <button
-                onClick={() => setShowKey((s) => !s)}
-                style={{ background: "none", color: "var(--text-3)", fontSize: 11, letterSpacing: "0.04em" }}
-              >
-                {apiKey ? "🔑 AI key set — tap to edit" : "🔑 Add Anthropic API key (optional)"}
-              </button>
-              {showKey && (
-                <input
-                  type="password"
-                  placeholder="sk-ant-…"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value.trim())}
-                  autoComplete="off"
-                  style={{ marginTop: 8, fontSize: 13 }}
-                />
-              )}
-              {showKey && (
-                <div style={{ fontSize: 10, color: "var(--text-3)", marginTop: 6, lineHeight: 1.5 }}>
-                  Stored only in this browser. Used to read screenshots via Claude.
-                  Manual entry below works without a key.
-                </div>
-              )}
-            </div>
-
-            {/* Divider */}
-            <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "2px 0" }}>
-              <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
-              <span style={{ fontSize: 11, color: "var(--text-3)", letterSpacing: "0.06em" }}>OR ENTER MANUALLY</span>
-              <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
-            </div>
 
             {/* Platform + Date */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>

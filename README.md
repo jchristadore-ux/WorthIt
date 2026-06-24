@@ -8,7 +8,6 @@
 
 ## Features
 
-- 📸 **Screenshot auto-fill** — upload your end-of-shift earnings screen and AI reads it
 - ⏱ **Time-value scoring** — every shift scored 0–100 against your $75/hr opportunity cost
 - ⛽ **True cost breakdown** — gross, fuel cost, net take-home, IRS mileage deduction
 - 📊 **Shift history** — running log with per-shift verdict badges
@@ -20,9 +19,9 @@
 ## Tech Stack
 
 - React 18 (Create React App)
-- Anthropic Claude API (screenshot OCR → structured JSON)
 - Pure CSS custom properties — no UI library
 - Fonts: DM Serif Display + DM Sans (Google Fonts)
+- Shift data persisted in browser localStorage — no backend
 
 ---
 
@@ -35,7 +34,8 @@ npm install
 npm start
 ```
 
-The app calls `https://api.anthropic.com/v1/messages` directly from the browser for screenshot analysis. The API key must be injected by your deployment environment (see below).
+Enter each shift manually on the **Log Shift** tab. All data stays in your
+browser (localStorage) — there's no backend and no external API.
 
 ---
 
@@ -61,20 +61,6 @@ on GitHub's servers and publishes the compiled output to GitHub Pages — you do
 > directly. It must be compiled (`npm run build`) into static files first.
 > Serving the repo root without that build is why GitHub Pages was falling
 > back to rendering `README.md`.
-
----
-
-## API Key Note
-
-The screenshot auto-fill feature calls the Anthropic API directly from the
-browser. The app reads an optional key you enter in the UI (tap **"Add
-Anthropic API key"** on the Log tab) and stores it **only in your browser's
-localStorage** — it is never committed to the repo or sent anywhere except
-Anthropic.
-
-Manual entry works fully without a key. For a hardened production setup, route
-the request through a serverless proxy (e.g. Vercel `/api/analyze.js`) so the
-key never touches the client.
 
 ---
 
